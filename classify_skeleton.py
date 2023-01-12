@@ -8,24 +8,26 @@ import time
 from picamera.array import PiRGBArray
 from picamera import PiCamera
 
-'''
+"""
 DO NOT CHANGE THIS CLASS.
 Parallelizes the image retrieval and processing across two cores on the Pi.
-'''
+"""
+
+
 class PiVideoStream:
     def __init__(self, resolution=(640, 480), framerate=32):
         self.process = None
         self.resolution = resolution
         self.framerate = framerate
 
-
     def start(self):
         pipe_in, self.pipe_out = Pipe()
         # start the thread to read frames from the video stream
-        self.process = Process(target=self.update, args=(pipe_in,), daemon=True)
+        self.process = Process(
+            target=self.update, args=(pipe_in,), daemon=True
+        )
         self.process.start()
         return self
-    
 
     def update(self, pipe_in):
         # initialize the camera and stream
@@ -37,8 +39,9 @@ class PiVideoStream:
         self.frame = None
         self.stopped = False
         self.rawCapture = PiRGBArray(self.camera, size=self.resolution)
-        self.stream = self.camera.capture_continuous(self.rawCapture,
-            format="bgr", use_video_port=True)
+        self.stream = self.camera.capture_continuous(
+            self.rawCapture, format="bgr", use_video_port=True
+        )
         # keep looping infinitely until the thread is stopped
         for f in self.stream:
             # grab the frame from the stream and clear the stream in
@@ -62,17 +65,16 @@ class PiVideoStream:
         else:
             return None
 
-
     def stop(self):
         # indicate that the thread should be stopped
         self.stopped = True
 
 
 print("[INFO] sampling MULTIPROCESSED frames from `picamera` module...")
-vs = PiVideoStream(resolution=(640,480)).start()
+vs = PiVideoStream(resolution=(640, 480)).start()
 time.sleep(2.0)
 
-'''
+"""
 DO NOT CHANGE THIS FUNCTION.
 
 Annotates your filtered image with the values you calculate.
@@ -98,52 +100,63 @@ midline -           The starting and ending points of the line that
 
 instruction -       A string chosen from "left", "right", "straight", "stop",
                     or "idle".
-'''
+"""
+
+
 def part2_checkoff(img, contours, contour_index, moment, midline, instruction):
-    img = cv2.drawContours(img, contours, contour_index, (0,0,255), 3)
-    img = cv2.circle(img, (moment[0], moment[1]), 3, (0,255,0), 3)
-    
-    img = cv2.line(img,
-                   midline[0],
-                   midline[1],
-                   (0, 0, 255),
-                   3)
-    
-    img = cv2.putText(img,
-                      instruction,
-                      (50, 50),
-                      cv2.FONT_HERSHEY_SIMPLEX,
-                      2,
-                      (0,0,255),
-                      2,
-                      cv2.LINE_AA)
+    img = cv2.drawContours(img, contours, contour_index, (0, 0, 255), 3)
+    img = cv2.circle(img, (moment[0], moment[1]), 3, (0, 255, 0), 3)
+
+    img = cv2.line(img, midline[0], midline[1], (0, 0, 255), 3)
+
+    img = cv2.putText(
+        img,
+        instruction,
+        (50, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        2,
+        (0, 0, 255),
+        2,
+        cv2.LINE_AA,
+    )
 
     return img
 
+
 def detect_shape(color_img):
-    '''
+    """
     PART 1
-    Isolate (but do not detect) the arrow/stop sign using image filtering techniques. 
+    Isolate (but do not detect) the arrow/stop sign using image filtering techniques.
     Return a mask that isolates a black shape on white paper
 
     Checkoffs: None for this part!
-    '''
-    
-    img = color_img
+    """
 
-    '''
+    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
+
+    THRESHOLD = 150
+    MAX_VAL = 255
+    _, threshold_img = cv2.threshold(
+        gray_img, THRESHOLD, MAX_VAL, cv2.THRESH_BINARY
+    )
+
+    cv2.imshow("Video", threshold_img)
+
+    """
     END OF PART 1
-    '''
+    """
 
     # Create the color image for annotating.
-    formatted_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-    
+    formatted_img = cv2.cvtColor(threshold_img, cv2.COLOR_GRAY2BGR)
+
     # Find contours in the filtered image.
-    contours, hierarchy = cv2.findContours(img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    contours, hierarchy = cv2.findContours(
+        threshold_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+    )
     if len(contours) == 0:
         return
-    
-    '''
+
+    """
     PART 2
     1. Identify the contour with the largest area.
     2. Find the centroid of that contour.
@@ -154,16 +167,17 @@ def detect_shape(color_img):
        above for documentation on how to use it.
 
     Checkoffs: Send this formatted image to your leads in your team's Discord group chat.
-    '''
-    
+    """
+
     instruction = "idle"
 
-    '''
+    """
     END OF PART 2
-    '''
+    """
     return instruction
 
-'''
+
+"""
 PART 3
 0. Before doing any of the following, arm your ESC by following the instructions in the
    spec. You only have to do this once. Than the range will be remembered by the ESC
@@ -181,20 +195,20 @@ NOTE: If you change the variable names pwm_m and pwm_s, you'll also need to upda
       cleanup code at the bottom of this skeleton.
 
 Checkoffs: None for this part!
-'''
+"""
 
 pwm_m = None
 pwm_s = None
 print("started!")
 
-'''
+"""
 END OF PART 3
-'''
+"""
 
-'''
+"""
 PART 4
 1. 
-'''
+"""
 
 frame_count = 0
 left_count = 0
@@ -206,14 +220,14 @@ try:
         if vs.pipe_out.poll():
             result = vs.read()
             img = cv2.rotate(result, cv2.ROTATE_180)
-            
+
             frame_count += 1
             if frame_count == 1:
                 print(img.shape)
 
             instruction = detect_shape(img)
 
-            '''
+            """
             PART 4
             1. Figure out the values of your motor and Servo PWMs for each instruction
                from `detect_shape()`.
@@ -221,19 +235,19 @@ try:
                that an instruction of "idle" should leave the car's behavior UNCHANGED.
 
             Checkoffs: Show the leads your working car!
-            '''
+            """
 
             last_instruction = instruction
 
-            '''
+            """
             END OF PART 4
-            '''
+            """
 
             k = cv2.waitKey(3)
-            if k == ord('q'):
+            if k == ord("q"):
                 # If you press 'q' in the OpenCV window, the program will stop running.
                 break
-            elif k == ord('p'):
+            elif k == ord("p"):
                 # If you press 'p', the camera feed will be paused until you press
                 # <Enter> in the terminal.
                 input()
