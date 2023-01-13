@@ -7,6 +7,7 @@ from queue import Queue
 import time
 from picamera.array import PiRGBArray
 from picamera import PiCamera
+import copy
 
 """
 DO NOT CHANGE THIS CLASS.
@@ -134,13 +135,11 @@ def detect_shape(color_img):
 
     gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
 
-    THRESHOLD = 150
+    THRESHOLD = 100
     MAX_VAL = 255
     _, threshold_img = cv2.threshold(
         gray_img, THRESHOLD, MAX_VAL, cv2.THRESH_BINARY
     )
-
-    cv2.imshow("Video", threshold_img)
 
     """
     END OF PART 1
@@ -168,6 +167,49 @@ def detect_shape(color_img):
 
     Checkoffs: Send this formatted image to your leads in your team's Discord group chat.
     """
+
+    # Only use large contours
+    MIN_AREA = 5000
+    large_contours = [
+        contour for contour in contours if cv2.contourArea(contour) >= MIN_AREA
+    ]
+
+    GREEN = (0, 255, 0)
+    cv2.drawContours(formatted_img, large_contours, -1, GREEN, 3)
+
+    key_points = []
+
+    for contour in large_contours:
+        area_and_hull = (
+            cv2.contourArea(contour),
+            cv2.contourArea(cv2.convexHull(contour)),
+        )
+        print(area_and_hull[0], end=", ")
+
+        try:
+            convexity = area_and_hull[0] / area_and_hull[1]
+        except ZeroDivisionError:
+            convexity = 0
+
+        print(convexity, end=", ")
+
+        moments = cv2.moments(contour)
+        try:
+            mx = int(moments["m10"] / moments["m00"])
+            my = int(moments["m01"] / moments["m00"])
+        except ZeroDivisionError:
+            (mx, my) = (0, 0)
+        print(f"({mx}, {my})", end=", ")
+        key_points.append(cv2.KeyPoint(mx, my, 1))
+    print()
+
+    RED = (0, 0, 255)
+    img_with_keys = cv2.drawKeypoints(
+        formatted_img, key_points, 0, RED, flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT
+    )
+    cv2.imshow("Video", img_with_keys)
+
+    # TODO: Use area to distinguish sign and paper background
 
     instruction = "idle"
 
