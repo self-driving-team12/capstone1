@@ -274,8 +274,41 @@ NOTE: If you change the variable names pwm_m and pwm_s, you'll also need to upda
 Checkoffs: None for this part!
 """
 
-pwm_m = None
-pwm_s = None
+GPIO.setmode(GPIO.BOARD)
+GPIO.setwarnings(False)
+
+ESC_CONTROLLING_PIN = 7
+SERVO_PIN = 8
+MOTOR_FREQUENCY = 60
+SERVO_FREQUENCY = 50
+NEUTRAL_SIGNAL = 8.0
+FULL_FORWARD_SIGNAL = 10.3
+FULL_BACK_SIGNAL = 5.7
+
+GPIO.setup(ESC_CONTROLLING_PIN, GPIO.OUT)
+GPIO.setup(SERVO_PIN, GPIO.OUT)
+
+pwm_motor = GPIO.PWM(ESC_CONTROLLING_PIN, MOTOR_FREQUENCY)
+pwm_servo = GPIO.PWM(SERVO_PIN, SERVO_FREQUENCY)
+
+pwm_motor.start(NEUTRAL_SIGNAL)
+pwm_servo.start(NEUTRAL_SIGNAL)
+
+# For servo:
+# 5.8 is straight
+# >5.8 is left
+# <5.8 is right
+# Motor seems to work fine
+
+try:
+    while True:
+        pwm_servo.ChangeDutyCycle(float(input("> ")))
+except KeyboardInterrupt:
+    pass
+
+pwm_motor.stop()
+GPIO.cleanup()
+
 print("started!")
 
 """
