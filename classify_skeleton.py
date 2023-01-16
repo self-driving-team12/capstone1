@@ -7,7 +7,6 @@ from queue import Queue
 import time
 from picamera.array import PiRGBArray
 from picamera import PiCamera
-import copy
 
 """
 DO NOT CHANGE THIS CLASS.
@@ -124,6 +123,36 @@ def part2_checkoff(img, contours, contour_index, moment, midline, instruction):
     return img
 
 
+def make_threshold_img(img):
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    THRESHOLD = 100
+    MAX_VAL = 255
+    _, threshold_img = cv2.threshold(
+        gray_img, THRESHOLD, MAX_VAL, cv2.THRESH_BINARY
+    )
+
+    # Flood fill with seeds located on a rectangle a little smaller than the window
+    SEED_STEP = 10
+    DISTANCE_FROM_EDGE = 20
+    height, width = threshold_img.shape[:2]
+    top_seeds = [(x, DISTANCE_FROM_EDGE) for x in range(0, width, SEED_STEP)]
+    left_seeds = [(DISTANCE_FROM_EDGE, y) for y in range(0, height, SEED_STEP)]
+    right_seeds = [
+        (x, height - DISTANCE_FROM_EDGE) for x in range(0, width, SEED_STEP)
+    ]
+    bottom_seeds = [
+        (width - DISTANCE_FROM_EDGE, y) for y in range(0, height, SEED_STEP)
+    ]
+
+    for seed in top_seeds + left_seeds + right_seeds + bottom_seeds:
+        WHITE = 255
+        mask = np.zeros((height + 2, width + 2), np.uint8)
+        cv2.floodFill(threshold_img, mask, seed, WHITE)
+
+    return threshold_img
+
+
 def detect_shape(color_img):
     """
     PART 1
@@ -133,27 +162,16 @@ def detect_shape(color_img):
     Checkoffs: None for this part!
     """
 
-    gray_img = cv2.cvtColor(color_img, cv2.COLOR_BGR2GRAY)
-
-    THRESHOLD = 100
-    MAX_VAL = 255
-    _, threshold_img = cv2.threshold(
-        gray_img, THRESHOLD, MAX_VAL, cv2.THRESH_BINARY
-    )
+    threshold_img = make_threshold_img(color_img)
 
     """
     END OF PART 1
     """
 
-    # Create the color image for annotating.
-    formatted_img = cv2.cvtColor(threshold_img, cv2.COLOR_GRAY2BGR)
-
     # Find contours in the filtered image.
-    contours, hierarchy = cv2.findContours(
+    contours, _ = cv2.findContours(
         threshold_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
-    if len(contours) == 0:
-        return
 
     """
     PART 2
@@ -168,55 +186,72 @@ def detect_shape(color_img):
     Checkoffs: Send this formatted image to your leads in your team's Discord group chat.
     """
 
-    # Only use large contours
-    MIN_AREA = 5000
-    large_contours = [
-        contour for contour in contours if cv2.contourArea(contour) >= MIN_AREA
-    ]
+    # Small contours are likely noise, large contour is likely the whole window
+    MIN_AREA = 1000
+    MAX_AREA = 100_000
 
-    GREEN = (0, 255, 0)
-    cv2.drawContours(formatted_img, large_contours, -1, GREEN, 3)
+    traffic_sign = None
+    sign_idx = -1
 
-    key_points = []
-
-    for contour in large_contours:
-        area_and_hull = (
-            cv2.contourArea(contour),
-            cv2.contourArea(cv2.convexHull(contour)),
-        )
-        print(area_and_hull[0], end=", ")
-
-        try:
-            convexity = area_and_hull[0] / area_and_hull[1]
-        except ZeroDivisionError:
-            convexity = 0
-
-        print(convexity, end=", ")
-
-        moments = cv2.moments(contour)
-        try:
-            mx = int(moments["m10"] / moments["m00"])
-            my = int(moments["m01"] / moments["m00"])
-        except ZeroDivisionError:
-            (mx, my) = (0, 0)
-        print(f"({mx}, {my})", end=", ")
-        key_points.append(cv2.KeyPoint(mx, my, 1))
-    print()
-
-    RED = (0, 0, 255)
-    img_with_keys = cv2.drawKeypoints(
-        formatted_img, key_points, 0, RED, flags=cv2.DRAW_MATCHES_FLAGS_DEFAULT
-    )
-    cv2.imshow("Video", img_with_keys)
-
-    # TODO: Use area to distinguish sign and paper background
+    for idx, contour in enumerate(contours):
+        if MIN_AREA <= cv2.contourArea(contour) <= MAX_AREA:
+            traffic_sign = contour
+            sign_idx = idx
+            break
 
     instruction = "idle"
 
+    if traffic_sign is None:
+        return (sign_idx, instruction)
+
+    # Convexity
+    area = cv2.contourArea(traffic_sign)
+    hull = cv2.contourArea(cv2.convexHull(traffic_sign))
+
+    try:
+        convexity = area / hull
+    except ZeroDivisionError:
+        convexity = 0
+
+    CUTOFF = 0.9
+
+    if convexity > CUTOFF:
+        # Stop sign detected
+        instructions = "stop"
+        return (sign_idx, instructions)
+
+    moments = cv2.moments(traffic_sign)
+
+    try:
+        mx = int(moments["m10"] / moments["m00"])
+        my = int(moments["m01"] / moments["m00"])
+    except ZeroDivisionError:
+        (mx, my) = (0, 0)
+
+    # Bounding box
+    x, y, w, h = cv2.boundingRect(traffic_sign)
+
+    tilt_ratio = abs(x - mx) / w
+
+    print(tilt_ratio)
+
+    MIDDLE_TILT = 0.5
+    TOLERANCE = 0.05
+
+    if tilt_ratio > MIDDLE_TILT + TOLERANCE:
+        # Arrow is pointing right
+        instructions = "right"
+        return (sign_idx, instructions)
+    elif tilt_ratio < MIDDLE_TILT - TOLERANCE:
+        # Arrow is pointing left
+        instructions = "left"
+        return (sign_idx, instructions)
+
+    instructions = "straight"
+    return (sign_idx, instructions)
     """
     END OF PART 2
     """
-    return instruction
 
 
 """
@@ -264,10 +299,55 @@ try:
             img = cv2.rotate(result, cv2.ROTATE_180)
 
             frame_count += 1
+            print(frame_count)
             if frame_count == 1:
                 print(img.shape)
 
-            instruction = detect_shape(img)
+            checkoff_img = None
+
+            contour_idx, instruction = detect_shape(img)
+
+            threshold_img = make_threshold_img(img)
+            contours, _ = cv2.findContours(
+                threshold_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            formatted_img = cv2.cvtColor(threshold_img, cv2.COLOR_GRAY2BGR)
+
+            if contours and contour_idx != -1:
+                moments = cv2.moments(contours[contour_idx])
+                try:
+                    moment = (
+                        int(moments["m10"] / moments["m00"]),
+                        int(moments["m01"] / moments["m00"]),
+                    )
+                except ZeroDivisionError:
+                    moment = (0, 0)
+
+                x, y, w, h = cv2.boundingRect(contours[contour_idx])
+                midline = ((x + w // 2, y), (x + w // 2, y + h))
+
+                checkoff_img = part2_checkoff(
+                    formatted_img,
+                    contours,
+                    contour_idx,
+                    moment,
+                    midline,
+                    instruction,
+                )
+            else:
+                checkoff_img = cv2.putText(
+                    formatted_img,
+                    instruction,
+                    (50, 50),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    2,
+                    (0, 0, 255),
+                    2,
+                    cv2.LINE_AA,
+                )
+
+            cv2.imshow("RPi Camera Feed", checkoff_img)
 
             """
             PART 4
