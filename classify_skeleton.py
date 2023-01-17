@@ -240,8 +240,6 @@ def detect_shape(color_img):
 
     tilt_ratio = abs(x - mx) / w
 
-    print(tilt_ratio)
-
     MIDDLE_TILT = 0.5
     TOLERANCE = 0.05
 
@@ -291,19 +289,17 @@ FULL_BACK_SIGNAL = 5.7
 
 
 class Motor:
-    PIN = 7
+    PIN = 37
     FREQ = 60
-    OFF = 0
-    BACK = 10
-    FORWARD = 6
+    BACK = 10.3
+    FORWARD = 5.7
     NEUTRAL = 8
 
 
 class Servo:
     PIN = 8
-    FREQ = 50
-    OFF = 0
-    STRAIGHT = 6.4
+    FREQ = 60
+    STRAIGHT = 7.6
     LEFT = 8
     RIGHT = 5
 
@@ -318,8 +314,8 @@ class Car:
         self.motor = GPIO.PWM(Motor.PIN, Motor.FREQ)
         self.servo = GPIO.PWM(Servo.PIN, Servo.FREQ)
 
-        self.motor.start(Motor.OFF)
-        self.servo.start(Servo.OFF)
+        self.motor.start(Motor.NEUTRAL)
+        self.servo.start(Servo.STRAIGHT)
 
         self.straight()
 
@@ -336,11 +332,14 @@ class Car:
         input("Enter anything to continue: ")
 
     def stop(self):
-        self.motor.ChangeDutyCycle(Motor.OFF)
-        self.servo.ChangeDutyCycle(Motor.OFF)
+        self.motor.ChangeDutyCycle(Motor.NEUTRAL)
+        self.servo.ChangeDutyCycle(Servo.STRAIGHT)
 
     def forward(self):
         self.motor.ChangeDutyCycle(Motor.FORWARD)
+        self.servo.ChangeDutyCycle(
+            Servo.STRAIGHT
+        )  # Motor somehow influences the servo
 
     def back(self):
         self.motor.ChangeDutyCycle(Motor.BACK)
@@ -348,7 +347,6 @@ class Car:
     def turn(self, cycle_value):
         self.servo.ChangeDutyCycle(cycle_value)
         time.sleep(self.TURN_TIME)
-        self.servo.ChangeDutyCycle(Motor.OFF)
 
     def straight(self):
         self.turn(Servo.STRAIGHT)
@@ -358,6 +356,20 @@ class Car:
 
     def right(self):
         self.turn(Servo.RIGHT)
+
+    def calibrate_motor(self):
+        try:
+            while True:
+                self.motor.ChangeDutyCycle(float(input("motor: ")))
+        except KeyboardInterrupt:
+            pass
+
+    def calibrate_servo(self):
+        try:
+            while True:
+                self.servo.ChangeDutyCycle(float(input("servo: ")))
+        except KeyboardInterrupt:
+            pass
 
 
 car = Car()
