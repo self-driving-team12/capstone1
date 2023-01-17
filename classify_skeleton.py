@@ -1,12 +1,14 @@
+import time
+from enum import Enum, auto
+from multiprocessing import Pipe, Process
+from queue import Queue
+from threading import Thread
+
 import cv2
 import numpy as np
 import RPi.GPIO as GPIO
-from threading import Thread
-from multiprocessing import Process, Pipe
-from queue import Queue
-import time
-from picamera.array import PiRGBArray
 from picamera import PiCamera
+from picamera.array import PiRGBArray
 
 """
 DO NOT CHANGE THIS CLASS.
@@ -123,6 +125,14 @@ def part2_checkoff(img, contours, contour_index, moment, midline, instruction):
     return img
 
 
+class Instruction(Enum):
+    LEFT = auto()
+    RIGHT = auto()
+    STRAIGHT = auto()
+    STOP = auto()
+    IDLE = auto()
+
+
 def make_threshold_img(img):
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -199,10 +209,8 @@ def detect_shape(color_img):
             sign_idx = idx
             break
 
-    instruction = "idle"
-
     if traffic_sign is None:
-        return (sign_idx, instruction)
+        return (sign_idx, Instruction.IDLE)
 
     # Convexity
     area = cv2.contourArea(traffic_sign)
@@ -217,8 +225,7 @@ def detect_shape(color_img):
 
     if convexity > CUTOFF:
         # Stop sign detected
-        instructions = "stop"
-        return (sign_idx, instructions)
+        return (sign_idx, Instruction.STOP)
 
     moments = cv2.moments(traffic_sign)
 
@@ -240,15 +247,13 @@ def detect_shape(color_img):
 
     if tilt_ratio > MIDDLE_TILT + TOLERANCE:
         # Arrow is pointing right
-        instructions = "right"
-        return (sign_idx, instructions)
+        return (sign_idx, Instruction.RIGHT)
     elif tilt_ratio < MIDDLE_TILT - TOLERANCE:
         # Arrow is pointing left
         instructions = "left"
-        return (sign_idx, instructions)
+        return (sign_idx, Instruction.LEFT)
 
-    instructions = "straight"
-    return (sign_idx, instructions)
+    return (sign_idx, Instruction.STRAIGHT)
     """
     END OF PART 2
     """
@@ -277,37 +282,85 @@ Checkoffs: None for this part!
 GPIO.setmode(GPIO.BOARD)
 GPIO.setwarnings(False)
 
+# Motor constants
 ESC_CONTROLLING_PIN = 7
-SERVO_PIN = 8
 MOTOR_FREQUENCY = 60
-SERVO_FREQUENCY = 50
-NEUTRAL_SIGNAL = 8.0
+NEUTRAL_MOTOR_SIGNAL = 8.0
 FULL_FORWARD_SIGNAL = 10.3
 FULL_BACK_SIGNAL = 5.7
 
-GPIO.setup(ESC_CONTROLLING_PIN, GPIO.OUT)
-GPIO.setup(SERVO_PIN, GPIO.OUT)
 
-pwm_motor = GPIO.PWM(ESC_CONTROLLING_PIN, MOTOR_FREQUENCY)
-pwm_servo = GPIO.PWM(SERVO_PIN, SERVO_FREQUENCY)
+class Motor:
+    PIN = 7
+    FREQ = 60
+    OFF = 0
+    BACK = 10
+    FORWARD = 6
+    NEUTRAL = 8
 
-pwm_motor.start(NEUTRAL_SIGNAL)
-pwm_servo.start(NEUTRAL_SIGNAL)
 
-# For servo:
-# 5.8 is straight
-# >5.8 is left
-# <5.8 is right
-# Motor seems to work fine
+class Servo:
+    PIN = 8
+    FREQ = 50
+    OFF = 0
+    STRAIGHT = 6.4
+    LEFT = 8
+    RIGHT = 5
 
-try:
-    while True:
-        pwm_servo.ChangeDutyCycle(float(input("> ")))
-except KeyboardInterrupt:
-    pass
 
-pwm_motor.stop()
-GPIO.cleanup()
+class Car:
+    TURN_TIME = 2
+
+    def __init__(self):
+        GPIO.setup(Motor.PIN, GPIO.OUT)
+        GPIO.setup(Servo.PIN, GPIO.OUT)
+
+        self.motor = GPIO.PWM(Motor.PIN, Motor.FREQ)
+        self.servo = GPIO.PWM(Servo.PIN, Servo.FREQ)
+
+        self.motor.start(Motor.OFF)
+        self.servo.start(Servo.OFF)
+
+        self.straight()
+
+    def close(self):
+        self.motor.stop()
+        self.servo.stop()
+        GPIO.cleanup()
+
+    def __del__(self):
+        self.close()
+
+    def arm_motor(self):
+        self.motor.ChangeDutyCycle(Motor.NEUTRAL)
+        input("Enter anything to continue: ")
+
+    def stop(self):
+        self.motor.ChangeDutyCycle(Motor.OFF)
+        self.servo.ChangeDutyCycle(Motor.OFF)
+
+    def forward(self):
+        self.motor.ChangeDutyCycle(Motor.FORWARD)
+
+    def back(self):
+        self.motor.ChangeDutyCycle(Motor.BACK)
+
+    def turn(self, cycle_value):
+        self.servo.ChangeDutyCycle(cycle_value)
+        time.sleep(self.TURN_TIME)
+        self.servo.ChangeDutyCycle(Motor.OFF)
+
+    def straight(self):
+        self.turn(Servo.STRAIGHT)
+
+    def left(self):
+        self.turn(Servo.LEFT)
+
+    def right(self):
+        self.turn(Servo.RIGHT)
+
+
+car = Car()
 
 print("started!")
 
@@ -366,12 +419,12 @@ try:
                     contour_idx,
                     moment,
                     midline,
-                    instruction,
+                    f"{instruction}",
                 )
             else:
                 checkoff_img = cv2.putText(
                     formatted_img,
-                    instruction,
+                    f"{instruction}",
                     (50, 50),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     2,
@@ -392,7 +445,21 @@ try:
             Checkoffs: Show the leads your working car!
             """
 
-            last_instruction = instruction
+            print(instruction)
+
+            if instruction == Instruction.IDLE:
+                pass
+            elif instruction == Instruction.STRAIGHT:
+                car.straight()
+                car.forward()
+            elif instruction == Instruction.LEFT:
+                car.left()
+                car.forward()
+            elif instruction == Instruction.RIGHT:
+                car.right()
+                car.forward()
+            elif instruction == Instruction.STOP:
+                car.stop()
 
             """
             END OF PART 4
@@ -410,8 +477,5 @@ except KeyboardInterrupt:
     pass
 
 # Clean-up: stop running the camera and close any OpenCV windows
-pwm_m.stop()
-pwm_s.stop()
-GPIO.cleanup()
 cv2.destroyAllWindows()
 vs.stop()
